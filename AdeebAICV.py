@@ -1,41 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-ASTRO AI -- SMART DRIVER MONITORING SYSTEM
-==========================================
-مشروع أديب وحسام وأحمد.
-
-ملف واحد فقط، يحتوي على:
-  - تحليل الوجه (عين مغمضة/مفتوحة، تثاؤب، اتجاه الرأس) بمحرّكين حقيقيين:
-        1) MediaPipe FaceMesh   (دقيق: EAR / MAR / solvePnP)
-        2) OpenCV Haar Cascade  (احتياطي حقيقي يعمل بدون mediapipe إطلاقًا)
-    هذا هو إصلاح المشكلة التي واجهتك: سابقًا إن لم تُهيّأ mediapipe كانت
-    الحالة تصبح VISION ERROR ويبقى الفيديو فقط بلا أي تحليل. الآن النظام
-    ينتقل تلقائيًا إلى محرك OpenCV ويستمر بالعمل ويعرض البيانات فعليًا.
-
-  - كشف انشغال السائق بالهاتف بمصدرين:
-        1) YOLO (ultralytics) إن كان مثبتًا -- يعطي صندوق + نسبة ثقة.
-        2) مسار بدون YOLO: MediaPipe Hands + إطراق الرأس للأسفل (Heuristic).
-    المسار الثاني معلن بوضوح كتقدير سلوكي (HAND+LOOK-DOWN) وليس تعرّفًا على
-    جهاز هاتف، حتى لا تُعرض عليك نتيجة موهمة بدقّة لا تملكها.
-
-  - جرس إنذار حقيقي: على الحاسوب (winsound/BEL) + على الهاتف (WebAudio
-    Oscillator بصوت عالٍ) + على Arduino (Serial) + على ESP32 (HTTP).
-
-  - وضع الهاتف: الحاسوب يعالج الصورة ويرجّعها للهاتف مرسومًا عليها الوجه
-    والبيانات، مع عرض عنوان IP للحاسوب داخل الصفحة، وحجم صورة مصغّر (50%).
-
-  - تواصل صوتي في الاتجاهين: الحاسوب -> الهاتف (نص يُنطق بـ TTS في المتصفح)،
-    والهاتف -> الحاسوب (تسجيل صوتي فعلي يُرسل ويُشغَّل على الحاسوب).
-
-  - واجهة تشغيل رسومية لاختيار الوضع (بديل عن قائمة التيرمنال)، مع بقاء
-    قائمة التيرمنال كخيار احتياطي.
-
-لا توجد بيانات وهمية: أي ميزة غير متوفرة تُعلن حالتها بوضوح بدل تلفيق نتيجة.
-تصدير أكواد Arduino/ESP32 كملفات .ino:
-    python astro_ai.py --export-firmware ./firmware_export
-"""
-
 import os
 import sys
 import time
@@ -56,9 +18,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Optional, Tuple, List, Dict, Any
 
-# ----------------------------------------------------------------------------
-# اعتماديات أساسية
-# ----------------------------------------------------------------------------
+
 try:
     import cv2
     HAS_CV2 = True
@@ -84,9 +44,7 @@ try:
 except ImportError:
     HAS_PIL = False
 
-# ----------------------------------------------------------------------------
-# اعتماديات اختيارية
-# ----------------------------------------------------------------------------
+
 try:
     import mediapipe as mp
     HAS_MEDIAPIPE = True
@@ -210,9 +168,9 @@ ASTRO_AI_SYSTEM_PROMPT = "أنت ASTRO AI، مساعد ذكاء اصطناعي �
 ASTRO_AI_MODEL = os.environ.get("ASTRO_OLLAMA_MODEL", "llama3.2:3b")
 
 
-# ==============================================================================
+
 # CONFIG
-# ==============================================================================
+
 class Config:
     # ---- العين / النعاس ----
     EAR_THRESHOLD = 0.205
@@ -290,9 +248,6 @@ STATE_COLORS = {
 }
 
 
-# ==============================================================================
-# VoiceManager -- TTS على الحاسوب + بث النص للهاتف لينطقه المتصفح
-# ==============================================================================
 class VoiceManager:
     def __init__(self, cooldown: float = Config.VOICE_COOLDOWN_SEC,
                  on_speak_callback=None):
@@ -392,9 +347,6 @@ class VoiceManager:
         self._stop_flag.set()
 
 
-# ==============================================================================
-# AlarmManager -- جرس حقيقي: حاسوب + هاتف + Arduino + ESP32
-# ==============================================================================
 class AlarmManager:
     def __init__(self, arduino_controller=None, esp_controller=None,
                  phone_broadcast=None):
@@ -470,9 +422,6 @@ class AlarmManager:
         time.sleep(0.2)
 
 
-# ==============================================================================
-# AudioPlayer -- تشغيل الصوت القادم من الهاتف على الحاسوب (حقيقي، بلا محاكاة)
-# ==============================================================================
 class AudioPlayer:
     CANDIDATES = [
         ("ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet"]),
@@ -547,9 +496,6 @@ class AudioPlayer:
             log.error(f"فشل تشغيل صوت الهاتف: {exc}")
 
 
-# ==============================================================================
-# ArduinoController
-# ==============================================================================
 class ArduinoController:
     def __init__(self, port: Optional[str] = None,
                  baudrate: int = Config.ARDUINO_BAUDRATE):
@@ -608,9 +554,7 @@ class ArduinoController:
         self.connected = False
 
 
-# ==============================================================================
 # ESP32
-# ==============================================================================
 class ESPBoardType:
     ESP32_S3_CAM = "ESP32-S3-CAM"
     ESP32_CAM_AI_THINKER = "ESP32-CAM AI Thinker"
@@ -725,10 +669,6 @@ class ESPCamera:
             except Exception:
                 pass
 
-
-# ==============================================================================
-# VisionResult + FaceAnalyzer (MediaPipe FaceMesh  أو  OpenCV Haar)
-# ==============================================================================
 class VisionResult:
     def __init__(self):
         self.face_found = False
@@ -995,9 +935,6 @@ class FaceAnalyzer:
                 except Exception: pass
 
 
-# ==============================================================================
-# PhoneUseDetector -- YOLO إن وُجد، وإلا تقدير سلوكي (يد + إطراق رأس)
-# ==============================================================================
 class PhoneDetection:
     def __init__(self, box, confidence: Optional[float]):
         self.box = box
@@ -1163,9 +1100,6 @@ class PhoneUseDetector:
             return []
 
 
-# ==============================================================================
-# AstroAIChat -- محادثة صوتية مع Ollama
-# ==============================================================================
 class AstroAIChat:
     def __init__(self, model: str = ASTRO_AI_MODEL):
         self.model = model
@@ -1297,9 +1231,6 @@ class AstroAIChat:
             return "", f"خطأ أثناء تحويل الصوت لنص: {exc}"
 
 
-# ==============================================================================
-# صفحة الهاتف (Flask + Socket.IO)
-# ==============================================================================
 PHONE_PAGE_HTML = """
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -1744,9 +1675,6 @@ class PhoneServer:
             self.available = False
 
 
-# ==============================================================================
-# النظام الرئيسي
-# ==============================================================================
 class InputMode:
     LAPTOP = "LAPTOP"
     PHONE = "PHONE"
@@ -2294,9 +2222,6 @@ class DriverMonitoringSystem:
         self.frame_out_queue.put((frame, telemetry))
 
 
-# ==============================================================================
-# LauncherUI -- واجهة اختيار الوضع (بديل قائمة التيرمنال)
-# ==============================================================================
 class LauncherUI:
     """نافذة إعداد رسومية. تُرجع dict بالإعدادات أو None عند الإلغاء."""
 
@@ -2437,10 +2362,6 @@ class LauncherUI:
         self.root.mainloop()
         return self.result
 
-
-# ==============================================================================
-# DashboardUI
-# ==============================================================================
 class DashboardUI:
     POLL_MS = 20
 
@@ -2651,9 +2572,6 @@ class DashboardUI:
         self.root.mainloop()
 
 
-# ==============================================================================
-# FIRMWARE SKETCHES (Arduino / ESP32)
-# ==============================================================================
 ARDUINO_UNO_SKETCH = r"""/*
   ASTRO AI -- Arduino Uno Sketch (Actuator Controller)
   الأوامر: ALARM_ON / ALARM_OFF / PHONE_ALERT / LOOK_FORWARD
@@ -3029,9 +2947,6 @@ void loop() {
 """
 
 
-# ==============================================================================
-# قائمة التيرمنال الاحتياطية + التشغيل
-# ==============================================================================
 def _select_from_menu(title: str, options: List[str]) -> int:
     print(f"\n{title}")
     for i, opt in enumerate(options, start=1):
