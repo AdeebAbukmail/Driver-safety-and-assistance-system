@@ -50,9 +50,17 @@ The third option combines the laptop camera with an Arduino board and an externa
 
 4. ESP-Based Monitoring System
 
-The fourth option provides support for an ESP-based monitoring system. The project is intended to be compatible with ESP boards of different types, depending on the required hardware configuration.
+The fourth option provides support for an ESP-based monitoring system. The project is intended to be compatible with ESP boards of 
+different types, depending on the required hardware configuration.
 
 For the system to operate correctly in this configuration, the code should be installed and executed on a Raspberry Pi.
+
+
+
+
+
+pip install opencv-python numpy pillow mediapipe ultralytics pyttsx3 pyserial flask flask-socketio requests ollama SpeechRecognition sounddevice
+
 
 Project Author:
 Adeeb Abu Kmail
