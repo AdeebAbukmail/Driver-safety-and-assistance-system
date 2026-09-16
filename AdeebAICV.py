@@ -1,3 +1,41 @@
+                      
+                       
+"""
+ADEEB AI -- SMART DRIVER MONITORING SYSTEM
+==========================================
+مشروع أديب ابوكمييل.
+
+ملف واحد فقط، يحتوي على:
+  - تحليل الوجه (عين مغمضة/مفتوحة، تثاؤب، اتجاه الرأس) بمحرّكين حقيقيين:
+        1) MediaPipe FaceMesh   (دقيق: EAR / MAR / solvePnP)
+        2) OpenCV Haar Cascade  (احتياطي حقيقي يعمل بدون mediapipe إطلاقًا)
+    هذا هو إصلاح المشكلة التي واجهتك: سابقًا إن لم تُهيّأ mediapipe كانت
+    الحالة تصبح VISION ERROR ويبقى الفيديو فقط بلا أي تحليل. الآن النظام
+    ينتقل تلقائيًا إلى محرك OpenCV ويستمر بالعمل ويعرض البيانات فعليًا.
+
+  - كشف انشغال السائق بالهاتف بمصدرين:
+        1) YOLO (ultralytics) إن كان مثبتًا -- يعطي صندوق + نسبة ثقة.
+        2) مسار بدون YOLO: MediaPipe Hands + إطراق الرأس للأسفل (Heuristic).
+    المسار الثاني معلن بوضوح كتقدير سلوكي (HAND+LOOK-DOWN) وليس تعرّفًا على
+    جهاز هاتف، حتى لا تُعرض عليك نتيجة موهمة بدقّة لا تملكها.
+
+  - جرس إنذار حقيقي: على الحاسوب (winsound/BEL) + على الهاتف (WebAudio
+    Oscillator بصوت عالٍ) + على Arduino (Serial) + على ESP32 (HTTP).
+
+  - وضع الهاتف: الحاسوب يعالج الصورة ويرجّعها للهاتف مرسومًا عليها الوجه
+    والبيانات، مع عرض عنوان IP للحاسوب داخل الصفحة، وحجم صورة مصغّر (50%).
+
+  - تواصل صوتي في الاتجاهين: الحاسوب -> الهاتف (نص يُنطق بـ TTS في المتصفح)،
+    والهاتف -> الحاسوب (تسجيل صوتي فعلي يُرسل ويُشغَّل على الحاسوب).
+
+  - واجهة تشغيل رسومية لاختيار الوضع (بديل عن قائمة التيرمنال)، مع بقاء
+    قائمة التيرمنال كخيار احتياطي.
+
+لا توجد بيانات وهمية: أي ميزة غير متوفرة تُعلن حالتها بوضوح بدل تلفيق نتيجة.
+تصدير أكواد Arduino/ESP32 كملفات .ino:
+    python adeeb_ai.py --export-firmware ./firmware_export
+"""
+
 import os
 import sys
 import time
@@ -18,7 +56,9 @@ import subprocess
 from dataclasses import dataclass
 from typing import Optional, Tuple, List, Dict, Any
 
-
+                                                                              
+                  
+                                                                              
 try:
     import cv2
     HAS_CV2 = True
@@ -44,7 +84,9 @@ try:
 except ImportError:
     HAS_PIL = False
 
-
+                                                                              
+                    
+                                                                              
 try:
     import mediapipe as mp
     HAS_MEDIAPIPE = True
@@ -102,7 +144,7 @@ except Exception:
     HAS_SPEECH_RECOGNITION = False
 
 try:
-    import sounddevice as _sd_probe  # فحص فقط -- الاستخدام الفعلي عند الحاجة
+    import sounddevice as _sd_probe                                          
     HAS_SOUNDDEVICE = True
 except Exception:
     HAS_SOUNDDEVICE = False
@@ -113,10 +155,10 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
-log = logging.getLogger("ASTRO")
+log = logging.getLogger("ADEEB")
 
 try:
-    _log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "astro_ai.log")
+    _log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "adeeb_ai.log")
     _fh = logging.FileHandler(_log_file, encoding="utf-8")
     _fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
     logging.getLogger().addHandler(_fh)
@@ -125,9 +167,9 @@ except Exception:
     pass
 
 
-APP_NAME = "ASTRO AI"
+APP_NAME = "ADEEB AI"
 
-# ---- نموذج MediaPipe Tasks (يُنزَّل تلقائيًا بجانب هذا الملف عند أول تشغيل) ----
+                                                                                  
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 FACE_MODEL_PATH = os.path.join(_THIS_DIR, "face_landmarker.task")
 FACE_MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/face_landmarker/"
@@ -159,61 +201,65 @@ def ensure_model_file(path: str, url: str, label: str = "النموذج") -> boo
     return False
 
 
-WELCOME_TEXT = "أهلاً بك في مشروع أديب وحسام وأحمد، أنت متصل الآن"
+WELCOME_TEXT = "أهلاً بك في مشروع أديب ابوكمييل، أنت متصل الآن"
+WELCOME_TEXT_EN = "Welcome to Adeeb Abu Kmail project. You are connected now."
 PHONE_ALERT_TEXT = "تنبيه، يرجى التركيز أثناء القيادة، اترك الهاتف"
+PHONE_ALERT_TEXT_EN = "Warning. Focus on driving and leave the phone now."
 DROWSY_ALERT_TEXT = "انتبه، عيناك مغلقتان، ركّز في الطريق"
+DROWSY_ALERT_TEXT_EN = "Warning. Your eyes are closed. Focus on the road."
 HEAD_ALERT_TEXT = "التفت إلى الأمام من فضلك"
-ASTRO_AI_GREETING = "مرحباً، أنا أسترو إيه آي، نموذج ذكاء اصطناعي صممني أديب وحسام. أنا هنا للمساعدة. وظيفتي هي مساعدة السائق."
-ASTRO_AI_SYSTEM_PROMPT = "أنت ASTRO AI، مساعد ذكاء اصطناعي لمساعدة السائق. صمّمك أديب وحسام. إذا سُئلت من صممك أو من أنت أو من أنشأك، أجب بوضوح أنك ASTRO AI وأن أديب وحسام صمماك. مهمتك الأساسية مساعدة السائق وتقديم إرشادات عامة وآمنة مرتبطة بالقيادة وشرح حالة النظام عند توفرها. لا تدّع أنك تقود السيارة أو تتحكم بها. كن مختصراً وواضحاً وبالعربية ما لم يطلب المستخدم لغة أخرى."
-ASTRO_AI_MODEL = os.environ.get("ASTRO_OLLAMA_MODEL", "llama3.2:3b")
+HEAD_ALERT_TEXT_EN = "Please look forward."
+ADEEB_AI_GREETING = "مرحباً، أنا أسترو إيه آي، نموذج ذكاء اصطناعي صممني أديب ابوكمييل. أنا هنا للمساعدة. وظيفتي هي مساعدة السائق."
+ADEEB_AI_SYSTEM_PROMPT = "أنت ADEEB AI، مساعد ذكاء اصطناعي لمساعدة السائق. صمّمك أديب ابوكمييل. إذا سُئلت من صممك أو من أنت أو من أنشأك، أجب بوضوح أنك ADEEB AI وأن أديب ابوكمييل صمماك. مهمتك الأساسية مساعدة السائق وتقديم إرشادات عامة وآمنة مرتبطة بالقيادة وشرح حالة النظام عند توفرها. لا تدّع أنك تقود السيارة أو تتحكم بها. كن مختصراً وواضحاً وبالعربية ما لم يطلب المستخدم لغة أخرى."
+ADEEB_AI_MODEL = os.environ.get("ADEEB_OLLAMA_MODEL", "llama3.2:3b")
 
 
-
-# CONFIG
-
+                                                                                
+        
+                                                                                
 class Config:
-    # ---- العين / النعاس ----
+                              
     EAR_THRESHOLD = 0.205
-    EYE_WARNING_SEC = 1.5
-    EYE_DANGER_SEC = 4.0            # 4 ثوانٍ متواصلة -> إنذار قوي
+    EYE_WARNING_SEC = 1
+    EYE_DANGER_SEC = 2                                        
     EAR_SMOOTHING_WINDOW = 5
     BLINK_MAX_SEC = 0.35
     GAZE_DEVIATION_THRESHOLD = 0.12
     PHONE_GAZE_HOLD_SEC = 1.0
     PHONE_ALERT_COOLDOWN_SEC = 5.0
-    HAAR_EYE_MISS_FRAMES = 3        # عدد إطارات متتالية بلا عين -> تعتبر مغمضة
+    HAAR_EYE_MISS_FRAMES = 3                                                   
 
-    # ---- الفم / التثاؤب ----
+                              
     MAR_THRESHOLD = 0.55
 
-    # ---- الرأس ----
+                     
     HEAD_YAW_THRESHOLD_DEG = 22.0
     HEAD_PITCH_DOWN_THRESHOLD_DEG = 15.0
     HEAD_TURN_HOLD_SEC = 2.0
-    INVERT_YAW = False              # اقلبها إن ظهر اليمين/اليسار معكوسًا عندك
+    INVERT_YAW = False                                                        
 
-    # ---- الهاتف ----
-    PHONE_HOLD_SEC = 3.0            # 3 ثوانٍ -> جرس عالٍ متكرر (كما طلبت)
+                      
+    PHONE_HOLD_SEC = 3.0                                                  
     PHONE_CONF_THRESHOLD = 0.40
-    PHONE_MEMORY_SEC = 0.8          # إبقاء آخر كشف مرئيًا لتفادي الوميض
+    PHONE_MEMORY_SEC = 0.8                                              
     YOLO_MODEL_PATH = "yolov8n.pt"
     YOLO_CELL_PHONE_CLASS_NAME = "cell phone"
-    YOLO_EVERY_N_FRAMES = 3         # تسريع: لا نشغّل YOLO على كل إطار
+    YOLO_EVERY_N_FRAMES = 3                                           
 
-    # ---- الصوت ----
-    VOICE_COOLDOWN_SEC = 4.0        # يتكرر التنبيه حتى يركّز السائق
+                     
+    VOICE_COOLDOWN_SEC = 4.0                                        
 
-    # ---- الشبكة ----
+                      
     PHONE_SERVER_PORT = 5000
-    PHONE_RESULT_FPS = 12           # معدل إرجاع الصورة المعالجة للهاتف
+    PHONE_RESULT_FPS = 12                                              
     PHONE_RESULT_WIDTH = 360
     ESP32_STREAM_PATH_AI_THINKER = ":81/stream"
 
-    # ---- Serial ----
+                      
     ARDUINO_BAUDRATE = 9600
     SERIAL_TIMEOUT = 1.0
 
-    # ---- الألوان ----
+                       
     COLOR_BG = "#05070a"
     COLOR_GREEN = "#19ff8a"
     COLOR_RED = "#ff274d"
@@ -221,10 +267,17 @@ class Config:
     COLOR_TEXT_DIM = "#6f8f8a"
     COLOR_PANEL = "#0b0f14"
 
-    # ---- الكاميرا ----
+                        
     CAMERA_INDEX = 0
     FRAME_WIDTH = 960
     FRAME_HEIGHT = 540
+
+
+LANGUAGE_AR = "ar"
+LANGUAGE_EN = "en"
+
+def localized(ar: str, en: str, language: str) -> str:
+    return ar if language == LANGUAGE_AR else en
 
 
 class SystemState:
@@ -248,6 +301,9 @@ STATE_COLORS = {
 }
 
 
+                                                                                
+                                                                 
+                                                                                
 class VoiceManager:
     def __init__(self, cooldown: float = Config.VOICE_COOLDOWN_SEC,
                  on_speak_callback=None):
@@ -309,7 +365,7 @@ class VoiceManager:
                 self._engine.say(text)
                 self._engine.runAndWait()
             except Exception as exc:
-                # المحرك يتعطل أحيانًا بعد خطأ واحد -- نعيد بناءه بدل فقدان الصوت
+                                                                                 
                 log.warning(f"خطأ TTS ({exc}) -- إعادة تهيئة المحرك.")
                 try:
                     self._engine.stop()
@@ -336,7 +392,7 @@ class VoiceManager:
 
     def speak_now(self, text: str):
         """نطق فوري على الحاسوب فقط، بدون تبريد (cooldown) وبدون بث الحدث العام
-        'speak' إلى الهاتف -- تُستخدم لردود ASTRO AI التي تُبث للهاتف عبر
+        'speak' إلى الهاتف -- تُستخدم لردود ADEEB AI التي تُبث للهاتف عبر
         قناتها الخاصة (ai_message) لتفادي نطق مزدوج لنفس النص."""
         if self.available:
             self._queue.put(text)
@@ -347,12 +403,15 @@ class VoiceManager:
         self._stop_flag.set()
 
 
+                                                                                
+                                                           
+                                                                                
 class AlarmManager:
     def __init__(self, arduino_controller=None, esp_controller=None,
                  phone_broadcast=None):
         self.arduino = arduino_controller
         self.esp = esp_controller
-        self.phone_broadcast = phone_broadcast   # callable(bool)
+        self.phone_broadcast = phone_broadcast                   
         self._active = False
         self._thread: Optional[threading.Thread] = None
         self._stop_flag = threading.Event()
@@ -422,6 +481,9 @@ class AlarmManager:
         time.sleep(0.2)
 
 
+                                                                                
+                                                                             
+                                                                                
 class AudioPlayer:
     CANDIDATES = [
         ("ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet"]),
@@ -496,6 +558,9 @@ class AudioPlayer:
             log.error(f"فشل تشغيل صوت الهاتف: {exc}")
 
 
+                                                                                
+                   
+                                                                                
 class ArduinoController:
     def __init__(self, port: Optional[str] = None,
                  baudrate: int = Config.ARDUINO_BAUDRATE):
@@ -554,7 +619,9 @@ class ArduinoController:
         self.connected = False
 
 
-# ESP32
+                                                                                
+       
+                                                                                
 class ESPBoardType:
     ESP32_S3_CAM = "ESP32-S3-CAM"
     ESP32_CAM_AI_THINKER = "ESP32-CAM AI Thinker"
@@ -669,6 +736,10 @@ class ESPCamera:
             except Exception:
                 pass
 
+
+                                                                                
+                                                                   
+                                                                                
 class VisionResult:
     def __init__(self):
         self.face_found = False
@@ -935,6 +1006,9 @@ class FaceAnalyzer:
                 except Exception: pass
 
 
+                                                                                
+                                                                     
+                                                                                
 class PhoneDetection:
     def __init__(self, box, confidence: Optional[float]):
         self.box = box
@@ -951,6 +1025,9 @@ class PhoneUseDetector:
         self._frame_counter = 0
         self._cached: List[PhoneDetection] = []
         self._cached_at = 0.0
+        self.hand_landmarks = []
+        self.person_boxes = []
+        self._person_class_id: Optional[int] = None
 
         if use_yolo and HAS_YOLO:
             self._init_yolo()
@@ -961,9 +1038,11 @@ class PhoneUseDetector:
         try:
             self.model = YOLO(Config.YOLO_MODEL_PATH)
             for cid, cname in self.model.names.items():
-                if str(cname).lower() == Config.YOLO_CELL_PHONE_CLASS_NAME:
+                name = str(cname).lower()
+                if name == Config.YOLO_CELL_PHONE_CLASS_NAME:
                     self._target_class_id = int(cid)
-                    break
+                if name == "person":
+                    self._person_class_id = int(cid)
             if self._target_class_id is None:
                 self.init_error = "النموذج لا يحتوي على صنف cell phone."
                 log.warning(self.init_error)
@@ -978,12 +1057,12 @@ class PhoneUseDetector:
 
     def _init_hands(self):
         if not HAS_MEDIAPIPE:
-            self.init_error = (self.init_error or "") + \
+            self.init_error = (self.init_error or "") +\
                 " | mediapipe غير مثبتة -- لا يوجد بديل لكشف انشغال الهاتف."
             log.warning("كشف انشغال الهاتف معطل (لا YOLO ولا mediapipe).")
             return
-        # المسار الأحدث: Tasks HandLandmarker (يعمل مع إصدارات mediapipe التي
-        # أزالت mp.solutions)
+                                                                             
+                             
         if not hasattr(mp, "solutions"):
             try:
                 from mediapipe.tasks import python as mp_python
@@ -1045,14 +1124,19 @@ class PhoneUseDetector:
         try:
             results = self.model.predict(frame, verbose=False,
                                          conf=Config.PHONE_CONF_THRESHOLD,
-                                         classes=[self._target_class_id])
+                                         classes=[x for x in (self._target_class_id, self._person_class_id) if x is not None])
             dets = []
+            self.person_boxes = []
             for r in results:
                 if r.boxes is None:
                     continue
                 for b in r.boxes:
                     x1, y1, x2, y2 = [int(v) for v in b.xyxy[0].tolist()]
-                    dets.append(PhoneDetection((x1, y1, x2, y2), float(b.conf[0])))
+                    cls_id = int(b.cls[0]) if getattr(b, "cls", None) is not None else self._target_class_id
+                    if cls_id == self._person_class_id:
+                        self.person_boxes.append((x1, y1, x2, y2))
+                    elif cls_id == self._target_class_id:
+                        dets.append(PhoneDetection((x1, y1, x2, y2), float(b.conf[0])))
             return dets
         except Exception as exc:
             log.error(f"خطأ YOLO: {exc}")
@@ -1060,6 +1144,7 @@ class PhoneUseDetector:
 
     def _detect_hands(self, frame, vision: VisionResult) -> List[PhoneDetection]:
         try:
+            self.hand_landmarks = []
             h, w = frame.shape[:2]
             rgb = np.ascontiguousarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
@@ -1082,6 +1167,7 @@ class PhoneUseDetector:
 
             looking_down = vision.head_dir == "DOWN"
             for hand in hand_list:
+                self.hand_landmarks.append([(int(lm.x * w), int(lm.y * h)) for lm in hand])
                 xs = [lm.x * w for lm in hand]
                 ys = [lm.y * h for lm in hand]
                 x1, y1, x2, y2 = int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))
@@ -1100,8 +1186,11 @@ class PhoneUseDetector:
             return []
 
 
-class AstroAIChat:
-    def __init__(self, model: str = ASTRO_AI_MODEL):
+                                                                                
+                                       
+                                                                                
+class AdeebAIChat:
+    def __init__(self, model: str = ADEEB_AI_MODEL):
         self.model = model
         self.enabled = False
         self.lock = threading.Lock()
@@ -1113,8 +1202,8 @@ class AstroAIChat:
         self.history.clear()
         ok, diag = self.check_ready()
         if not ok:
-            return ASTRO_AI_GREETING + "\n\n⚠️ " + diag
-        return ASTRO_AI_GREETING
+            return ADEEB_AI_GREETING + "\n\n⚠️ " + diag
+        return ADEEB_AI_GREETING
 
     def check_ready(self) -> Tuple[bool, str]:
         """فحص سريع: هل مكتبة ollama مثبتة، وهل خدمة Ollama تعمل فعليًا،
@@ -1138,7 +1227,7 @@ class AstroAIChat:
             self.last_error = str(exc)
             return False, ("تعذر الاتصال بخدمة Ollama (البرنامج غير مُشغَّل). "
                             "افتح الطرفية (CMD) ونفّذ: ollama serve  -- أو شغّل تطبيق Ollama نفسه، "
-                            f"ثم أعد تفعيل ASTRO AI. [{exc}]")
+                            f"ثم أعد تفعيل ADEEB AI. [{exc}]")
 
     def disable(self):
         self.enabled = False
@@ -1168,13 +1257,13 @@ class AstroAIChat:
     def ask(self, text: str) -> str:
         text = (text or "").strip()
         if not self.enabled:
-            return "فعّل ASTRO AI أولاً."
+            return "فعّل ADEEB AI أولاً."
         if not text:
             return "لم أسمع سؤالاً."
         if not HAS_OLLAMA:
             return "مكتبة ollama غير مثبتة على هذا الحاسوب. نفّذ: pip install ollama"
         with self.lock:
-            messages = [{"role": "system", "content": ASTRO_AI_SYSTEM_PROMPT}] + self.history[-10:]
+            messages = [{"role": "system", "content": ADEEB_AI_SYSTEM_PROMPT}] + self.history[-10:]
             messages.append({"role": "user", "content": text})
             try:
                 result = self._chat_once(messages)
@@ -1187,7 +1276,7 @@ class AstroAIChat:
                 self.last_error = str(exc)
                 msg = str(exc).lower()
                 log.error(f"خطأ Ollama: {exc}")
-                # النموذج غير موجود محليًا -- حاول تنزيله تلقائيًا مرة واحدة
+                                                                            
                 if "not found" in msg or "404" in msg or "pull" in msg:
                     try:
                         log.info(f"النموذج {self.model} غير موجود -- جارٍ تنزيله تلقائيًا (قد يستغرق دقائق)...")
@@ -1231,13 +1320,16 @@ class AstroAIChat:
             return "", f"خطأ أثناء تحويل الصوت لنص: {exc}"
 
 
+                                                                                
+                                 
+                                                                                
 PHONE_PAGE_HTML = """
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ASTRO AI -- Phone</title>
+<title>ADEEB AI -- Phone</title>
 <style>
   body{background:#05070a;color:#19ff8a;font-family:monospace;margin:0;padding:12px;text-align:center}
   h2{margin:4px 0 2px;font-size:20px;letter-spacing:2px}
@@ -1257,14 +1349,14 @@ PHONE_PAGE_HTML = """
   #aiPanel{max-width:340px;margin:10px auto;background:#0b0f14;border:1px solid #19ff8a;border-radius:10px;padding:10px;text-align:right;display:none}
   #aiLog{height:150px;overflow-y:auto;font-size:12px;line-height:1.55}
   .chatLine{margin:5px 0;padding:6px 8px;border-radius:7px}
-  .driver{background:#14251d;color:#19ff8a}.astro{background:#171f18;color:#ffd84d}
+  .driver{background:#14251d;color:#19ff8a}.adeeb{background:#171f18;color:#ffd84d}
   #aiBtn{width:100%;background:#19ff8a;color:#05070a;font-weight:bold}
   #aiBtn.active{background:#ff274d;color:white}
   #aiTalk{width:100%}
 </style>
 </head>
 <body>
-  <h2>ASTRO AI</h2>
+  <h2>ADEEB AI</h2>
   <div class="ip">اللابتوب: http://__SERVER_IP__:__SERVER_PORT__</div>
 
   <img id="shot" alt="processed">
@@ -1283,9 +1375,9 @@ PHONE_PAGE_HTML = """
 
   <div id="alertBox"></div>
   <button id="soundBtn">🔊 تفعيل الصوت</button>
-  <button id="aiBtn">🟢 تفعيل ASTRO AI</button>
+  <button id="aiBtn">🟢 تفعيل ADEEB AI</button>
   <div id="aiPanel"><div id="aiLog"></div>
-    <button id="aiTalk">🎙️ اضغط مع الاستمرار للتحدث مع ASTRO AI</button>
+    <button id="aiTalk">🎙️ اضغط مع الاستمرار للتحدث مع ADEEB AI</button>
     <div id="aiToggleRow" style="display:flex;gap:6px;margin-top:6px">
       <button id="aiTalkToggle" style="flex:1">🎤 اضغط لبدء التسجيل</button>
       <button id="aiCancelBtn" style="display:none;background:#ff274d;color:#fff;border-color:#ff274d">إلغاء ✖</button>
@@ -1304,7 +1396,7 @@ const ctx=canvas.getContext('2d');
 const shot=document.getElementById('shot');
 const socket=io();
 
-/* ---------- جرس إنذار عالٍ عبر WebAudio ---------- */
+
 let audioCtx=null,osc=null,gain=null,alarmOn=false;
 function ensureAudio(){ if(!audioCtx){ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); } if(audioCtx.state==='suspended'){audioCtx.resume();} }
 function startAlarm(){ if(alarmOn)return; ensureAudio(); alarmOn=true;
@@ -1320,8 +1412,7 @@ socket.on('connect',()=>{statusEl.textContent='متصل بالخادم.'; ensure
 socket.on('disconnect',()=>{statusEl.textContent='انقطع الاتصال!'; stopAlarm();});
 socket.on('alarm',d=>{ d.on?startAlarm():stopAlarm(); });
 
-/* ---------- اختيار صوت عربي إن وُجد، وإلا نترك المتصفح يستخدم صوته الافتراضي
-   (بعض هواتف أندرويد تصمت تمامًا إن أُجبرت على lang غير مثبّتة لديها) ---------- */
+
 let _voices=[];
 function _loadVoices(){ if('speechSynthesis' in window) _voices=window.speechSynthesis.getVoices()||[]; }
 _loadVoices();
@@ -1363,20 +1454,20 @@ socket.on('result',d=>{
   }
 });
 
-/* ---------- ASTRO AI + Ollama ---------- */
+
 const aiBtn=document.getElementById('aiBtn'), aiPanel=document.getElementById('aiPanel'), aiLog=document.getElementById('aiLog'), aiTalk=document.getElementById('aiTalk');
 const aiTalkToggle=document.getElementById('aiTalkToggle'), aiCancelBtn=document.getElementById('aiCancelBtn');
 let aiEnabled=false, aiRecording=false, aiBuffers=[];
-function addChat(role,text){const d=document.createElement('div');d.className='chatLine '+(role==='Driver'?'driver':'astro');d.textContent=role+': '+text;aiLog.appendChild(d);aiLog.scrollTop=aiLog.scrollHeight;}
+function addChat(role,text){const d=document.createElement('div');d.className='chatLine '+(role==='Driver'?'driver':'adeeb');d.textContent=role+': '+text;aiLog.appendChild(d);aiLog.scrollTop=aiLog.scrollHeight;}
 function speakLocal(text){ speakText(text); }
-aiBtn.addEventListener('click',()=>{ensureAudio();aiEnabled=!aiEnabled;aiBtn.classList.toggle('active',aiEnabled);aiBtn.textContent=aiEnabled?'🔴 إيقاف ASTRO AI':'🟢 تفعيل ASTRO AI';aiPanel.style.display=aiEnabled?'block':'none';socket.emit('ai_toggle',{enabled:aiEnabled});if(aiEnabled){const g='مرحباً، أنا أسترو إيه آي، نموذج ذكاء اصطناعي صممني أديب وحسام. أنا هنا للمساعدة. وظيفتي هي مساعدة السائق.';addChat('ASTRO AI',g);speakLocal(g);}});
+aiBtn.addEventListener('click',()=>{ensureAudio();aiEnabled=!aiEnabled;aiBtn.classList.toggle('active',aiEnabled);aiBtn.textContent=aiEnabled?'🔴 إيقاف ADEEB AI':'🟢 تفعيل ADEEB AI';aiPanel.style.display=aiEnabled?'block':'none';socket.emit('ai_toggle',{enabled:aiEnabled});if(aiEnabled){const g='مرحباً، أنا أسترو إيه آي، نموذج ذكاء اصطناعي صممني أديب ابوكمييل. أنا هنا للمساعدة. وظيفتي هي مساعدة السائق.';addChat('ADEEB AI',g);speakLocal(g);}});
 
-/* الزر الأول (لا يُحذف): اضغط مع الاستمرار -> أرسل عند الإفلات */
+
 function aiStart(e){e.preventDefault();if(!aiEnabled||aiRecording||aiToggleRecording||!micStream)return;ensureAudio();aiRecording=true;aiBuffers=[];aiTalk.textContent='🔴 أستمع إليك...';recSource=audioCtx.createMediaStreamSource(micStream);recNode=audioCtx.createScriptProcessor(4096,1,1);recRate=audioCtx.sampleRate;recNode.onaudioprocess=ev=>{if(aiRecording)aiBuffers.push(new Float32Array(ev.inputBuffer.getChannelData(0)));};recSource.connect(recNode);recNode.connect(audioCtx.destination);}
-function aiStop(e){e.preventDefault();if(!aiRecording)return;aiRecording=false;try{recSource.disconnect();recNode.disconnect();}catch(err){}aiTalk.textContent='🎙️ اضغط مع الاستمرار للتحدث مع ASTRO AI';let len=0;aiBuffers.forEach(b=>len+=b.length);if(len<1000)return;const all=new Float32Array(len);let off=0;aiBuffers.forEach(b=>{all.set(b,off);off+=b.length;});const wav=new Uint8Array(encodeWav(all,recRate));let bin='';const CH=0x8000;for(let i=0;i<wav.length;i+=CH)bin+=String.fromCharCode.apply(null,wav.subarray(i,i+CH));socket.emit('ai_audio',{data:btoa(bin),format:'wav'});}
+function aiStop(e){e.preventDefault();if(!aiRecording)return;aiRecording=false;try{recSource.disconnect();recNode.disconnect();}catch(err){}aiTalk.textContent='🎙️ اضغط مع الاستمرار للتحدث مع ADEEB AI';let len=0;aiBuffers.forEach(b=>len+=b.length);if(len<1000)return;const all=new Float32Array(len);let off=0;aiBuffers.forEach(b=>{all.set(b,off);off+=b.length;});const wav=new Uint8Array(encodeWav(all,recRate));let bin='';const CH=0x8000;for(let i=0;i<wav.length;i+=CH)bin+=String.fromCharCode.apply(null,wav.subarray(i,i+CH));socket.emit('ai_audio',{data:btoa(bin),format:'wav'});}
 aiTalk.addEventListener('touchstart',aiStart);aiTalk.addEventListener('touchend',aiStop);aiTalk.addEventListener('mousedown',aiStart);aiTalk.addEventListener('mouseup',aiStop);
 
-/* الزر الثاني (جديد): ضغطة تبدأ التسجيل، ضغطة أخرى توقف وترسل، وزر إلغاء منفصل */
+
 let aiToggleRecording=false, aiToggleBuffers=[], aiToggleSource=null, aiToggleNode=null, aiToggleRate=44100;
 function aiToggleStart(){
   if(!aiEnabled||aiRecording||aiToggleRecording||!micStream)return;
@@ -1410,9 +1501,9 @@ function aiToggleStop(send){
 aiTalkToggle.addEventListener('click',()=>{ if(!aiToggleRecording) aiToggleStart(); else aiToggleStop(true); });
 aiCancelBtn.addEventListener('click',()=> aiToggleStop(false));
 
-socket.on('ai_message',d=>{const role=d.role||'ASTRO AI',text=d.text||'';addChat(role,text);if(role==='ASTRO AI')speakLocal(text);});
+socket.on('ai_message',d=>{const role=d.role||'ADEEB AI',text=d.text||'';addChat(role,text);if(role==='ADEEB AI')speakLocal(text);});
 
-/* ---------- الكاميرا ---------- */
+
 async function startCamera(){
   try{
     const stream=await navigator.mediaDevices.getUserMedia({
@@ -1435,7 +1526,7 @@ function sendFrames(ts){
 }
 startCamera();
 
-/* ---------- فتح قفل الصوت (المتصفحات تمنع الصوت قبل لمسة المستخدم) ---------- */
+
 const soundBtn=document.getElementById('soundBtn');
 soundBtn.addEventListener('click',()=>{
   ensureAudio();
@@ -1443,7 +1534,7 @@ soundBtn.addEventListener('click',()=>{
   soundBtn.textContent='✅ الصوت مُفعّل';
 });
 
-/* ---------- تواصل صوتي: الهاتف -> اللابتوب (تسجيل WAV خام) ---------- */
+
 const talkBtn=document.getElementById('talkBtn');
 let micStream=null,recNode=null,recSource=null,recBuffers=[],recRate=44100,recording=false;
 
@@ -1621,7 +1712,7 @@ class PhoneServer:
             except Exception as exc:
                 log.error(f"[Phone] فشل استقبال الصوت: {exc}")
 
-    # ------------------------------------------------------------ broadcasts
+                                                                             
     def _emit(self, event: str, payload: dict):
         if self._socketio and self.available:
             try:
@@ -1675,6 +1766,9 @@ class PhoneServer:
             self.available = False
 
 
+                                                                                
+                
+                                                                                
 class InputMode:
     LAPTOP = "LAPTOP"
     PHONE = "PHONE"
@@ -1704,8 +1798,10 @@ class DriverMonitoringSystem:
                  esp_board: Optional[str] = None,
                  arduino_port: Optional[str] = None,
                  use_yolo: bool = True,
-                 prefer_mediapipe: bool = True):
+                 prefer_mediapipe: bool = True,
+                 language: str = LANGUAGE_AR):
         self.mode = mode
+        self.language = language if language in (LANGUAGE_AR, LANGUAGE_EN) else LANGUAGE_AR
         self.running = False
         self.capture_error: Optional[str] = None
 
@@ -1715,7 +1811,7 @@ class DriverMonitoringSystem:
         self.vision = FaceAnalyzer(prefer_mediapipe=prefer_mediapipe)
         self.phone_detector = PhoneUseDetector(use_yolo=use_yolo)
         self.audio_player = AudioPlayer()
-        self.ai = AstroAIChat()
+        self.ai = AdeebAIChat()
         self.ai_chat_queue: "queue.Queue" = queue.Queue(maxsize=50)
         self._ai_mic_stream = None
         self._ai_mic_buffers = []
@@ -1729,7 +1825,7 @@ class DriverMonitoringSystem:
         self.esp_camera: Optional[ESPCamera] = None
         self.cap = None
 
-        # مصدر الفيديو
+                      
         if mode == InputMode.PHONE:
             self.phone_server = PhoneServer(self._phone_in_queue,
                                             audio_player=self.audio_player,
@@ -1753,7 +1849,7 @@ class DriverMonitoringSystem:
         else:
             self._open_local_camera()
 
-        # ESP اختياري مع أوضاع أخرى
+                                   
         if mode != InputMode.ESP32 and esp_ip:
             self.esp_camera = ESPCamera(esp_ip, esp_board or ESPBoardType.OTHER_UNKNOWN)
             self.alarm.set_esp(self.esp_camera)
@@ -1782,7 +1878,7 @@ class DriverMonitoringSystem:
             backend_flags = [0]
         for flag in backend_flags:
             try:
-                cap = cv2.VideoCapture(Config.CAMERA_INDEX, flag) if flag else \
+                cap = cv2.VideoCapture(Config.CAMERA_INDEX, flag) if flag else\
                     cv2.VideoCapture(Config.CAMERA_INDEX)
                 if cap.isOpened():
                     cap.set(cv2.CAP_PROP_FRAME_WIDTH, Config.FRAME_WIDTH)
@@ -1795,7 +1891,7 @@ class DriverMonitoringSystem:
                 continue
         self.capture_error = "تعذر فتح كاميرا الحاسوب (تحقق من الصلاحيات أو رقم الكاميرا)."
 
-    # ---------------------------------------------------------------- helpers
+                                                                              
     def _broadcast_tts_to_phone(self, text: str):
         if self.phone_server and self.phone_server.available:
             self.phone_server.broadcast_speak(text)
@@ -1812,7 +1908,7 @@ class DriverMonitoringSystem:
     def _ai_toggle(self, enabled: bool):
         if enabled:
             greeting=self.ai.enable()
-            self._ai_broadcast("ASTRO AI", greeting)
+            self._ai_broadcast("ADEEB AI", greeting)
             self.voice.speak_now(greeting)
         else:
             self.ai.disable()
@@ -1823,7 +1919,7 @@ class DriverMonitoringSystem:
         if not text: return
         self._ai_broadcast("Driver", text)
         answer=self.ai.ask(text)
-        self._ai_broadcast("ASTRO AI", answer)
+        self._ai_broadcast("ADEEB AI", answer)
         self.voice.speak_now(answer)
 
     def _ai_text(self, text: str):
@@ -1836,7 +1932,7 @@ class DriverMonitoringSystem:
             self._handle_ai_text(text)
         else:
             answer = "⚠️ " + (err or "لم أتمكن من فهم الصوت. حاول التحدث بوضوح مرة أخرى.")
-            self._ai_broadcast("ASTRO AI", answer)
+            self._ai_broadcast("ADEEB AI", answer)
             self.voice.speak_now(answer)
 
     def ai_enable_from_laptop(self):
@@ -1844,7 +1940,7 @@ class DriverMonitoringSystem:
             self.ai.disable()
             return False
         greeting=self.ai.enable()
-        self._ai_broadcast("ASTRO AI", greeting)
+        self._ai_broadcast("ADEEB AI", greeting)
         self.voice.speak_now(greeting)
         return True
 
@@ -1852,7 +1948,7 @@ class DriverMonitoringSystem:
         """يبدأ تسجيل ميكروفون اللابتوب لإرساله لأولاما. يعيد (نجاح, رسالة)
         بدل فشل صامت، حتى تظهر للمستخدم سبب عدم عمل الزر بوضوح."""
         if not self.ai.enabled:
-            return False, "فعّل ASTRO AI أولاً من الزر الأخضر."
+            return False, "فعّل ADEEB AI أولاً من الزر الأخضر."
         if self._ai_mic_recording:
             return False, "التسجيل يعمل بالفعل."
         if not HAS_SOUNDDEVICE:
@@ -1947,7 +2043,7 @@ class DriverMonitoringSystem:
             return None, "فشل قراءة إطار من الكاميرا."
         return frame, None
 
-    # ------------------------------------------------------------ state machine
+                                                                                
     def _evaluate(self, vision: VisionResult, phones: List[PhoneDetection], now: float) -> RuntimeTelemetry:
         t = RuntimeTelemetry()
         t.backend = vision.backend
@@ -1961,7 +2057,7 @@ class DriverMonitoringSystem:
             self._release_danger()
             return t
 
-        # ---------- الوجه / العين ----------
+                                             
         eye_hold = head_hold = 0.0
         if vision.face_found:
             t.ear, t.mar, t.yaw, t.pitch = vision.ear, vision.mar, vision.yaw, vision.pitch
@@ -1981,7 +2077,7 @@ class DriverMonitoringSystem:
             t.eye_text = "--"; t.head_text = "--"
             self._eye_closed_since = None; self._head_turn_since = None
 
-        # ---------- الهاتف + اتجاه النظر ----------
+                                                    
         phone_present = bool(phones)
         t.phone_present = phone_present
         if phone_present:
@@ -1994,7 +2090,7 @@ class DriverMonitoringSystem:
             face_cx = (fx1 + fx2) / 2.0
             face_cy = (fy1 + fy2) / 2.0
             fw = max(1.0, fx2 - fx1)
-            # نفحص الهاتف الأقرب لوجه السائق.
+                                             
             nearest = min(phones, key=lambda d: abs(((d.box[0]+d.box[2])/2.0)-face_cx) + abs(((d.box[1]+d.box[3])/2.0)-face_cy))
             px = (nearest.box[0] + nearest.box[2]) / 2.0
             py = (nearest.box[1] + nearest.box[3]) / 2.0
@@ -2015,14 +2111,14 @@ class DriverMonitoringSystem:
             self._phone_attention_since = None
         phone_hold = (now - self._phone_attention_since) if self._phone_attention_since else 0.0
 
-        # ---------- الأولويات ----------
+                                         
         if phone_hold >= Config.PHONE_HOLD_SEC:
             t.state = SystemState.PHONE_DANGER
             t.message = "تحذير: السائق ينظر باتجاه الهاتف."
             self._trigger_danger()
             if now - self._last_phone_alert >= Config.PHONE_ALERT_COOLDOWN_SEC:
                 self._last_phone_alert = now
-                self.voice.speak("phone", PHONE_ALERT_TEXT, force=True)
+                self.voice.speak("phone", localized(PHONE_ALERT_TEXT, PHONE_ALERT_TEXT_EN, self.language), force=True)
                 self.arduino.send_command("PHONE_ALERT")
                 if self.esp_camera and not self.esp_camera.has_camera:
                     self.esp_camera.send_command("PHONE_ALERT")
@@ -2030,10 +2126,10 @@ class DriverMonitoringSystem:
             t.state = SystemState.DANGER
             t.message = "خطر: العينان مغلقتان لأكثر من 4 ثوانٍ."
             self._trigger_danger()
-            self.voice.speak("drowsy", DROWSY_ALERT_TEXT, force=True)
+            self.voice.speak("drowsy", localized(DROWSY_ALERT_TEXT, DROWSY_ALERT_TEXT_EN, self.language), force=True)
         elif vision.face_found and head_hold >= Config.HEAD_TURN_HOLD_SEC:
             t.state = SystemState.WARNING; t.message = HEAD_ALERT_TEXT
-            self._release_danger(); self.voice.speak("head_turn", HEAD_ALERT_TEXT)
+            self._release_danger(); self.voice.speak("head_turn", localized(HEAD_ALERT_TEXT, HEAD_ALERT_TEXT_EN, self.language))
             self.arduino.send_command("LOOK_FORWARD")
             if self.esp_camera and not self.esp_camera.has_camera: self.esp_camera.send_command("LOOK_FORWARD")
         elif vision.face_found and eye_hold >= Config.EYE_WARNING_SEC:
@@ -2062,7 +2158,7 @@ class DriverMonitoringSystem:
         if not keep_phone:
             self._phone_seen_since = None
 
-    # ------------------------------------------------------------------- draw
+                                                                              
     def _draw(self, frame, vision: VisionResult, phones: List[PhoneDetection],
               t: RuntimeTelemetry):
         if not (HAS_CV2 and HAS_NUMPY):
@@ -2075,14 +2171,26 @@ class DriverMonitoringSystem:
             danger = t.state in (SystemState.DANGER, SystemState.PHONE_DANGER)
             box_color = red if danger else green
 
+            person_boxes = list(getattr(self.phone_detector, "person_boxes", []))
+            if not person_boxes and vision.box:
+                person_boxes = [vision.box]
+            for x1, y1, x2, y2 in person_boxes:
+                cv2.rectangle(frame, (x1, y1), (x2, y2), green, 2)
+                cv2.putText(frame, "PERSON", (x1, max(18, y1 - 8)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, green, 2)
+
             if vision.box:
                 x1, y1, x2, y2 = vision.box
-                cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
-                cv2.putText(frame, "DRIVER", (x1, max(18, y1 - 8)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, box_color, 2)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 1)
+                cv2.putText(frame, "DRIVER", (x1, max(18, y1 - 26)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 1)
 
             for (ex1, ey1, ex2, ey2) in vision.eye_boxes:
                 cv2.rectangle(frame, (ex1, ey1), (ex2, ey2), yellow, 1)
+
+            for hand in getattr(self.phone_detector, "hand_landmarks", []):
+                for px, py in hand:
+                    cv2.circle(frame, (px, py), 4, green, -1)
 
             for det in phones:
                 x1, y1, x2, y2 = det.box
@@ -2091,7 +2199,7 @@ class DriverMonitoringSystem:
                 cv2.putText(frame, label, (x1, max(18, y1 - 8)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, red, 2)
 
-            # لوحة بيانات إنجليزية (OpenCV لا يرسم العربية بشكل صحيح)
+                                                                     
             eye_en = "--"
             if vision.face_found and vision.eyes_closed is not None:
                 eye_en = "CLOSED" if vision.eyes_closed else "OPEN"
@@ -2106,7 +2214,7 @@ class DriverMonitoringSystem:
             ]
             panel_w = 360
             if vision.error:
-                # نص الخطأ الفعلي (مهم للتشخيص) -- يُقطَّع إلى أسطر قصيرة ليظهر كاملاً
+                                                                                      
                 err_chunks = [vision.error[i:i + 46] for i in range(0, len(vision.error), 46)][:3]
                 lines += [f"ERROR : {c}" for c in err_chunks]
                 panel_w = 460
@@ -2123,14 +2231,14 @@ class DriverMonitoringSystem:
             log.error(f"خطأ الرسم: {exc}")
             return frame
 
-    # ----------------------------------------------------------------- loop
+                                                                            
     def start(self):
         self.running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
         if not self._greeted:
             self._greeted = True
-            self.voice.speak("welcome", WELCOME_TEXT, force=True)
+            self.voice.speak("welcome", localized(WELCOME_TEXT, WELCOME_TEXT_EN, self.language), force=True)
 
     def stop(self):
         self.running = False
@@ -2222,6 +2330,9 @@ class DriverMonitoringSystem:
         self.frame_out_queue.put((frame, telemetry))
 
 
+                                                                                
+                                                         
+                                                                                
 class LauncherUI:
     """نافذة إعداد رسومية. تُرجع dict بالإعدادات أو None عند الإلغاء."""
 
@@ -2242,13 +2353,17 @@ class LauncherUI:
         pad = {"padx": 16, "pady": 4}
 
         self._label(self.root, APP_NAME, Config.COLOR_GREEN, 20, True).pack(padx=20, pady=(16, 0))
-        self._label(self.root, "Smart Driver Monitoring -- أديب وحسام وأحمد",
+        self._label(self.root, "Smart Driver Monitoring -- أديب ابوكمييل",
                     Config.COLOR_TEXT_DIM, 9).pack(pady=(0, 10))
 
         frame = tk.Frame(self.root, bg=Config.COLOR_PANEL, bd=0)
         frame.pack(fill="x", padx=16, pady=6)
 
         self.mode_var = tk.StringVar(value=InputMode.LAPTOP)
+        self.language_var = tk.StringVar(value=LANGUAGE_AR)
+        self._label(frame, "اللغة / Language:", Config.COLOR_GREEN, 11, True).grid(row=0, column=1, sticky="w", **pad)
+        tk.Radiobutton(frame, text="العربية", value=LANGUAGE_AR, variable=self.language_var, bg=Config.COLOR_PANEL, fg=Config.COLOR_GREEN, selectcolor=Config.COLOR_BG).grid(row=1, column=1, sticky="w", padx=28)
+        tk.Radiobutton(frame, text="English", value=LANGUAGE_EN, variable=self.language_var, bg=Config.COLOR_PANEL, fg=Config.COLOR_GREEN, selectcolor=Config.COLOR_BG).grid(row=2, column=1, sticky="w", padx=28)
         self._label(frame, "مصدر الفيديو:", Config.COLOR_GREEN, 11, True).grid(
             row=0, column=0, sticky="w", **pad)
         modes = [("كاميرا اللابتوب", InputMode.LAPTOP),
@@ -2265,7 +2380,7 @@ class LauncherUI:
                            command=self._on_mode_change).grid(
                 row=1 + i, column=0, sticky="w", padx=28)
 
-        # ESP32
+               
         esp = tk.Frame(self.root, bg=Config.COLOR_PANEL)
         esp.pack(fill="x", padx=16, pady=6)
         self._label(esp, "ESP32 (اختياري لغير وضع ESP32):",
@@ -2280,7 +2395,7 @@ class LauncherUI:
                  bg=Config.COLOR_BG, fg=Config.COLOR_GREEN,
                  insertbackground=Config.COLOR_GREEN).grid(row=2, column=1, sticky="w", pady=3)
 
-        # Arduino
+                 
         ard = tk.Frame(self.root, bg=Config.COLOR_PANEL)
         ard.pack(fill="x", padx=16, pady=6)
         self._label(ard, "Arduino (اختياري):", Config.COLOR_GREEN, 10, True).grid(
@@ -2295,7 +2410,7 @@ class LauncherUI:
                   bg=Config.COLOR_BG, fg=Config.COLOR_GREEN,
                   font=("Consolas", 9), relief="flat").grid(row=1, column=2, padx=6)
 
-        # خيارات
+                
         opt = tk.Frame(self.root, bg=Config.COLOR_PANEL)
         opt.pack(fill="x", padx=16, pady=6)
         self.mp_var = tk.BooleanVar(value=HAS_MEDIAPIPE)
@@ -2311,7 +2426,7 @@ class LauncherUI:
                        activebackground=Config.COLOR_PANEL,
                        font=("Consolas", 9), anchor="w").pack(anchor="w", padx=16, pady=2)
 
-        # حالة المكتبات
+                       
         self.status_text = tk.Text(self.root, height=6, width=54,
                                    bg=Config.COLOR_PANEL, fg=Config.COLOR_TEXT_DIM,
                                    font=("Consolas", 9), relief="flat")
@@ -2353,6 +2468,7 @@ class LauncherUI:
             "esp_ip": self.ip_var.get().strip() or None,
             "esp_board": self.board_var.get(),
             "arduino_port": self.port_var.get().strip() or None,
+            "language": self.language_var.get(),
             "use_yolo": bool(self.yolo_var.get()),
             "prefer_mediapipe": bool(self.mp_var.get()),
         }
@@ -2362,6 +2478,10 @@ class LauncherUI:
         self.root.mainloop()
         return self.result
 
+
+                                                                                
+             
+                                                                                
 class DashboardUI:
     POLL_MS = 20
 
@@ -2384,14 +2504,14 @@ class DashboardUI:
     def _build(self):
         mono = ("Consolas", 10)
 
-        # ------------------------------------------------------------------
-        # ملاحظة تخطيط مهمة: كل الأشرطة الثابتة (الأعلى، لوحة المحادثة،
-        # شريط الرسائل، الأسفل) تُعبّأ (pack) هنا أولًا، وصورة الفيديو
-        # video_label تُعبّأ في الأخير. بهذا الترتيب يحجز مدير التخطيط في
-        # Tkinter المساحة اللازمة لكل هذه العناصر دائمًا، وصورة الكاميرا
-        # تأخذ ما تبقّى من المساحة فقط -- فلا تعود تختفي عناصر التحكم خلف
-        # الكاميرا (كما كان يحدث سابقًا مع وضع كاميرا الهاتف).
-        # ------------------------------------------------------------------
+                                                                            
+                                                                       
+                                                                      
+                                                                         
+                                                                        
+                                                                         
+                                                              
+                                                                            
         top = tk.Frame(self.root, bg=Config.COLOR_PANEL, height=36)
         top.pack(side="top", fill="x")
 
@@ -2414,14 +2534,14 @@ class DashboardUI:
                                     fg=Config.COLOR_TEXT_DIM, font=mono)
         self.clock_label.pack(side="right", padx=10)
 
-        self.ai_button = tk.Button(top, text="🟢 تفعيل ASTRO AI", command=self._toggle_ai,
+        self.ai_button = tk.Button(top, text="🟢 تفعيل ADEEB AI", command=self._toggle_ai,
                                    bg=Config.COLOR_GREEN, fg=Config.COLOR_BG,
                                    font=("Consolas", 9, "bold"), relief="flat")
         self.ai_button.pack(side="right", padx=8)
 
-        # -------- شريط التواصل مع الهاتف: أعلى يمين واجهة اللابتوب --------
-        # (كان سابقًا أسفل النافذة ويختفي خلف صورة الكاميرا -- نُقل إلى هنا
-        # ليبقى ظاهرًا دائمًا بغض النظر عن حجم صورة الفيديو).
+                                                                            
+                                                                           
+                                                             
         comm = tk.Frame(top, bg=Config.COLOR_PANEL)
         comm.pack(side="right", padx=8)
         tk.Label(comm, text="رسالة صوتية إلى الهاتف:", bg=Config.COLOR_PANEL,
@@ -2441,7 +2561,7 @@ class DashboardUI:
 
         self.ai_chat_frame = tk.Frame(self.root, bg=Config.COLOR_PANEL, width=300)
         self.ai_chat_frame.pack(side="right", fill="y", padx=(0,4), pady=4)
-        tk.Label(self.ai_chat_frame, text="محادثة ASTRO AI", bg=Config.COLOR_PANEL,
+        tk.Label(self.ai_chat_frame, text="محادثة ADEEB AI", bg=Config.COLOR_PANEL,
                  fg=Config.COLOR_YELLOW, font=("Consolas", 11, "bold")).pack(pady=6)
         self.ai_chat = tk.Text(self.ai_chat_frame, width=32, height=18, bg=Config.COLOR_BG,
                                fg=Config.COLOR_GREEN, font=("Consolas", 9), relief="flat",
@@ -2468,8 +2588,8 @@ class DashboardUI:
                                       fg=Config.COLOR_YELLOW, font=mono)
         self.message_label.pack(side="right", padx=10, pady=6)
 
-        # صورة الفيديو تُعبَّأ أخيرًا: تأخذ فقط ما تبقّى من المساحة بعد أن
-        # حجزت كل الأشرطة أعلاه مكانها.
+                                                                          
+                                       
         self.video_label = tk.Label(self.root, bg="black")
         self.video_label.pack(side="top", fill="both", expand=True)
 
@@ -2487,7 +2607,7 @@ class DashboardUI:
         if msg:
             self.comm_status.config(text=msg)
         elif ok:
-            self.comm_status.config(text="تم الإرسال إلى ASTRO AI...")
+            self.comm_status.config(text="تم الإرسال إلى ADEEB AI...")
 
     def _append_ai_chat(self, role: str, text: str):
         self.ai_chat.config(state="normal")
@@ -2497,11 +2617,11 @@ class DashboardUI:
 
     def _toggle_ai(self):
         enabled=self.system.ai_enable_from_laptop()
-        label="🔴 إيقاف ASTRO AI" if enabled else "🟢 تفعيل ASTRO AI"
+        label="🔴 إيقاف ADEEB AI" if enabled else "🟢 تفعيل ADEEB AI"
         color=Config.COLOR_RED if enabled else Config.COLOR_GREEN
         self.ai_button.config(text=label,bg=color,fg="white" if enabled else Config.COLOR_BG)
         self.ai_lap_btn.config(text=label,bg=color,fg="white" if enabled else Config.COLOR_BG)
-        if enabled: self._append_ai_chat("ASTRO AI", ASTRO_AI_GREETING)
+        if enabled: self._append_ai_chat("ADEEB AI", ADEEB_AI_GREETING)
 
     def _send_msg(self):
         text = self.msg_var.get()
@@ -2572,11 +2692,10 @@ class DashboardUI:
         self.root.mainloop()
 
 
-ARDUINO_UNO_SKETCH = r"""/*
-  ASTRO AI -- Arduino Uno Sketch (Actuator Controller)
-  الأوامر: ALARM_ON / ALARM_OFF / PHONE_ALERT / LOOK_FORWARD
-  التوصيل: BUZZER_PIN = 8 , LED_PIN = 13
-*/
+                                                                                
+                                     
+                                                                                
+ARDUINO_UNO_SKETCH = r"""
 
 const int BUZZER_PIN = 8;
 const int LED_PIN = 13;
@@ -2594,7 +2713,7 @@ void setup() {
   digitalWrite(BUZZER_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
   Serial.begin(9600);
-  Serial.println("ASTRO AI -- Arduino Uno Ready");
+  Serial.println("ADEEB AI -- Arduino Uno Ready");
 }
 
 void loop() {
@@ -2656,11 +2775,7 @@ void shortAlertPattern(int pulses, int pulseDurationMs) {
 }
 """
 
-ESP32_AI_THINKER_SKETCH = r"""/*
-  ASTRO AI -- ESP32-CAM (AI Thinker) MJPEG Stream
-  البث على: http://<IP>:81/stream   (نفس المسار الذي يتوقعه ملف بايثون)
-  Board في Arduino IDE: "AI Thinker ESP32-CAM"
-*/
+ESP32_AI_THINKER_SKETCH = r"""
 
 #include "esp_camera.h"
 #include <WiFi.h>
@@ -2764,11 +2879,7 @@ void setup() {
 void loop() { delay(10000); }
 """
 
-ESP32_S3_CAM_SKETCH = r"""/*
-  ASTRO AI -- ESP32-S3-CAM / S3-EYE MJPEG Stream
-  تنبيه: توصيلات أطراف الكاميرا تختلف بين لوحات S3 -- راجع مخطط لوحتك وعدّل
-  التعريفات أدناه قبل الرفع. القيم هنا شائعة للوحات S3-CAM بحساس OV2640.
-*/
+ESP32_S3_CAM_SKETCH = r"""
 
 #include "esp_camera.h"
 #include <WiFi.h>
@@ -2870,10 +2981,7 @@ void setup() {
 void loop() { delay(10000); }
 """
 
-ESP32_CONTROLLER_ONLY_SKETCH = r"""/*
-  ASTRO AI -- ESP32 كوحدة تحكم فقط (بدون كاميرا)
-  نقاط النهاية: / , /alarm_on , /alarm_off , /phone_alert , /look_forward
-*/
+ESP32_CONTROLLER_ONLY_SKETCH = r"""
 
 #include <WiFi.h>
 #include <WebServer.h>
@@ -2891,7 +2999,7 @@ unsigned long lastToggleMs = 0;
 bool toggleState = false;
 const unsigned long TOGGLE_INTERVAL_MS = 200;
 
-void handleRoot() { server.send(200, "text/plain", "ASTRO AI -- ESP32 Controller Ready"); }
+void handleRoot() { server.send(200, "text/plain", "ADEEB AI -- ESP32 Controller Ready"); }
 void handleAlarmOn() { alarmActive = true; server.send(200, "text/plain", "ACK ALARM_ON"); }
 void handleAlarmOff() {
   alarmActive = false;
@@ -2947,6 +3055,9 @@ void loop() {
 """
 
 
+                                                                                
+                                      
+                                                                                
 def _select_from_menu(title: str, options: List[str]) -> int:
     print(f"\n{title}")
     for i, opt in enumerate(options, start=1):
@@ -2981,16 +3092,16 @@ def run_console_menu() -> dict:
     arduino_port = input("منفذ Arduino (اتركه فارغًا للتخطي): ").strip() or None
 
     return {"mode": mode, "esp_ip": esp_ip, "esp_board": esp_board,
-            "arduino_port": arduino_port, "use_yolo": HAS_YOLO,
+            "arduino_port": arduino_port, "language": LANGUAGE_AR if language == 1 else LANGUAGE_EN, "use_yolo": HAS_YOLO,
             "prefer_mediapipe": HAS_MEDIAPIPE}
 
 
 def export_firmware_files(target_dir: str):
     mapping = {
-        "astro_ai_uno.ino": ARDUINO_UNO_SKETCH,
-        "astro_ai_esp32cam_ai_thinker.ino": ESP32_AI_THINKER_SKETCH,
-        "astro_ai_esp32s3_cam.ino": ESP32_S3_CAM_SKETCH,
-        "astro_ai_esp32_controller.ino": ESP32_CONTROLLER_ONLY_SKETCH,
+        "adeeb_ai_uno.ino": ARDUINO_UNO_SKETCH,
+        "adeeb_ai_esp32cam_ai_thinker.ino": ESP32_AI_THINKER_SKETCH,
+        "adeeb_ai_esp32s3_cam.ino": ESP32_S3_CAM_SKETCH,
+        "adeeb_ai_esp32_controller.ino": ESP32_CONTROLLER_ONLY_SKETCH,
     }
     os.makedirs(target_dir, exist_ok=True)
     for filename, content in mapping.items():
@@ -3014,7 +3125,7 @@ def main():
             log.error(f"فشل فتح واجهة الإعداد ({exc}) -- التحويل إلى التيرمنال.")
     if cfg is None:
         if HAS_TK:
-            # المستخدم أغلق نافذة الإعداد
+                                         
             print("تم الإلغاء.")
             return
         cfg = run_console_menu()
@@ -3022,7 +3133,7 @@ def main():
     system = DriverMonitoringSystem(
         mode=cfg["mode"], esp_ip=cfg.get("esp_ip"), esp_board=cfg.get("esp_board"),
         arduino_port=cfg.get("arduino_port"), use_yolo=cfg.get("use_yolo", True),
-        prefer_mediapipe=cfg.get("prefer_mediapipe", True))
+        prefer_mediapipe=cfg.get("prefer_mediapipe", True), language=cfg.get("language", LANGUAGE_AR))
 
     if system.capture_error:
         print(f"\n[تنبيه مصدر الفيديو] {system.capture_error}")
