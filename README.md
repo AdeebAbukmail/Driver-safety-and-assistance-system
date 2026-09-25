@@ -33,11 +33,7 @@ According to international road-safety literature, human-related factors constit
 
 - WHO Eastern Mediterranean Health Journal:
   https://www.emro.who.int/emhj-volume-32-2026/volume-32-number-7/road-traffic-injuries-and-road-safety-efforts-in-saudi-arabia.html
-
-«Note: The sources above should be reviewed individually before claiming that more than 90% of crashes are specifically caused by drowsiness or distraction. The broader statement that human factors contribute substantially to road-traffic crashes is more scientifically defensible, while the exact percentage depends on the definition, dataset, country, and methodology used.»
-
----
-
+ـــ
 AI Monitoring Modes
 
 When the project is launched, the user can select from several AI-based monitoring configurations.
