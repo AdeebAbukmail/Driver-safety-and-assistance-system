@@ -1,0 +1,13 @@
+opencv-python
+numpy
+Pillow
+mediapipe
+ultralytics
+pyttsx3
+pyserial
+Flask
+Flask-SocketIO
+requests
+ollama
+SpeechRecognition
+sounddevice
