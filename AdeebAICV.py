@@ -2075,16 +2075,12 @@ class DriverMonitoringSystem:
         phone_hold = (now - self._phone_attention_since) if self._phone_attention_since else 0.0
 
                                          
-        if phone_hold >= Config.PHONE_HOLD_SEC:
+        if phone_present:
             t.state = SystemState.PHONE_DANGER
             t.message = "تحذير: السائق ينظر باتجاه الهاتف."
             self._trigger_danger()
             if now - self._last_phone_alert >= Config.PHONE_ALERT_COOLDOWN_SEC:
                 self._last_phone_alert = now
-                self.voice.speak("phone", localized(PHONE_ALERT_TEXT, PHONE_ALERT_TEXT_EN, self.language), force=True)
-                self.arduino.send_command("PHONE_ALERT")
-                if self.esp_camera and not self.esp_camera.has_camera:
-                    self.esp_camera.send_command("PHONE_ALERT")
         elif vision.face_found and eye_hold >= Config.EYE_DANGER_SEC:
             t.state = SystemState.DANGER
             t.message = "خطر: العينان مغلقتان لأكثر من 4 ثوانٍ."
@@ -2133,14 +2129,6 @@ class DriverMonitoringSystem:
 
             danger = t.state in (SystemState.DANGER, SystemState.PHONE_DANGER)
             box_color = red if danger else green
-
-            person_boxes = list(getattr(self.phone_detector, "person_boxes", []))
-            if not person_boxes and vision.box:
-                person_boxes = [vision.box]
-            for x1, y1, x2, y2 in person_boxes:
-                cv2.rectangle(frame, (x1, y1), (x2, y2), green, 2)
-                cv2.putText(frame, "PERSON", (x1, max(18, y1 - 8)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, green, 2)
 
             if vision.box:
                 x1, y1, x2, y2 = vision.box
